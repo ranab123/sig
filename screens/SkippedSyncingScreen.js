@@ -10,7 +10,7 @@ const SkippedSyncingScreen = ({ navigation }) => (
         <Text style={styles.shareButtonText}>share</Text>
       </TouchableOpacity>
     </View>
-    <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('Permissions')}>
+    <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('NotShared')}>
       <Text style={styles.skipText}>I do not want to share right now.</Text>
     </TouchableOpacity>
   </View>

@@ -193,12 +193,12 @@ const IntroScreenTwo = ({ navigation }) => {
 const SyncPermissionScreen = ({ navigation }) => {
   const handleSync = () => {
     // Handle sync logic here
-    navigation.navigate('NextOnboardingScreen');
+    navigation.navigate('Permissions', { screen: 'Permissions' });
   };
 
   const handleSkip = () => {
     // Handle skip logic here
-    navigation.navigate('NextOnboardingScreen');
+    navigation.navigate('Permissions', { screen: 'Permissions' });
   };
 
   return (
