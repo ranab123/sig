@@ -6,39 +6,47 @@ import FriendsListScreen from './screens/FriendsListScreen';
 import SendCaveLinkScreen from './screens/SendCaveLinkScreen';
 import SkippedSyncingScreen from './screens/SkippedSyncingScreen';
 import ShareSheetScreen from './screens/ShareSheetScreen';
+import OnboardingNavigator from './screens/OnboardingScreen';
 
 const Stack = createStackNavigator();
+
 
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Permissions">
-        <Stack.Screen 
-          name="Permissions" 
-          component={PermissionsScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="FriendsList" 
-          component={FriendsListScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="SendCaveLink" 
-          component={SendCaveLinkScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="SkippedSyncing" 
-          component={SkippedSyncingScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="ShareSheet" 
-          component={ShareSheetScreen} 
-          options={{ headerShown: false }}
-        />
-      </Stack.Navigator>
+<Stack.Navigator initialRouteName="Permissions">
+  <Stack.Screen 
+    name="Permissions" 
+    component={PermissionsScreen} 
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="FriendsList" 
+    component={FriendsListScreen} 
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="SendCaveLink" 
+    component={SendCaveLinkScreen} 
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="SkippedSyncing" 
+    component={SkippedSyncingScreen} 
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="ShareSheet" 
+    component={ShareSheetScreen} 
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="Onboarding" 
+    component={OnboardingNavigator} 
+    options={{ headerShown: false }}
+  />
+</Stack.Navigator>
+
     </NavigationContainer>
   );
 }
