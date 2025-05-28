@@ -1,20 +1,38 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Share, Platform } from 'react-native';
 
-const SkippedSyncingScreen = ({ navigation }) => (
-  <View style={styles.container}>
-    <View style={styles.innerContainer}>
-      <Text style={styles.title}>skipped syncing?</Text>
-      <Text style={styles.subtitle}>just send your invite link to start building your cave.</Text>
-      <TouchableOpacity style={styles.shareButton} onPress={() => navigation.navigate('ShareSheet')}>
-        <Text style={styles.shareButtonText}>share</Text>
+const SkippedSyncingScreen = ({ navigation }) => {
+  const handleShare = async () => {
+    try {
+      const result = await Share.share({
+        message: 'Join my cave on sig!',
+        url: 'https://sig.app/invite', // Replace with your actual invite URL
+      });
+      
+      if (result.action === Share.sharedAction) {
+        // User shared the content - navigate to NotShared (the screen with bat signal and "my sig")
+        navigation.navigate('NotShared');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.innerContainer}>
+        <Text style={styles.title}>skipped syncing?</Text>
+        <Text style={styles.subtitle}>just send your invite link to start building your cave.</Text>
+        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <Text style={styles.shareButtonText}>share</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('NotShared')}>
+        <Text style={styles.skipText}>I do not want to share right now.</Text>
       </TouchableOpacity>
     </View>
-    <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('NotShared')}>
-      <Text style={styles.skipText}>I do not want to share right now.</Text>
-    </TouchableOpacity>
-  </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   container: {

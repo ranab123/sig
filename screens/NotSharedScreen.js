@@ -1,7 +1,11 @@
-import React, { useState, useContext } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Modal, Switch, ScrollView, Alert } from 'react-native';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Modal, Switch, ScrollView, Alert, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { BatIconContext } from '../App';
+import { useAuth } from '../context/AuthContext';
+import { updateSigStatus, getFriendRequestsReceived, getUserFriends } from '../firebase/services';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { height, width } = Dimensions.get('window');
 
@@ -25,6 +29,11 @@ const NotSharedScreen = ({ navigation }) => {
   const [showModal, setShowModal] = useState(false);
   const [showCaveAlert, setShowCaveAlert] = useState(false);
   const [everyoneToggle, setEveryoneToggle] = useState(true);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const { currentUser } = useAuth();
+  
+  // Animation for pulsing effect
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   
   // Friends data with selected state
   const [friends, setFriends] = useState([
@@ -33,11 +42,83 @@ const NotSharedScreen = ({ navigation }) => {
     { id: '3', name: 'Lauren', time: 'been on sig for 3 months', color: '#000', initials: 'L', selected: true },
     { id: '4', name: 'Sophie', time: 'been on sig for 2 weeks', color: '#1e293b', initials: 'S', selected: true },
   ]);
+
+  // Pulsing animation effect when sig is off
+  useEffect(() => {
+    if (!isShiny) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.08,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      // Reset to normal scale when sig is on
+      pulseAnim.setValue(1);
+    }
+  }, [isShiny]);
+
+  useEffect(() => {
+    loadPendingRequests();
+    loadFriends();
+  }, [currentUser, loadPendingRequests, loadFriends]);
   
-  const handleBatPress = () => {
+  const loadPendingRequests = React.useCallback(async () => {
+    if (!currentUser) return;
+    
+    try {
+      const requests = await getFriendRequestsReceived(currentUser.uid);
+      setPendingRequestsCount(requests.length);
+    } catch (error) {
+      console.error('Error loading pending requests:', error);
+    }
+  }, [currentUser]);
+
+  const loadFriends = React.useCallback(async () => {
+    if (!currentUser) return;
+    
+    try {
+      const userFriends = await getUserFriends(currentUser.uid);
+      // Convert to the format expected by the modal
+      const formattedFriends = userFriends.map((friend, index) => ({
+        id: friend.id,
+        name: `${friend.firstName} ${friend.lastName}`,
+        time: `been on sig for ${Math.floor(Math.random() * 12) + 1} weeks`, // Placeholder
+        color: ['#7c3aed', '#22c55e', '#000', '#1e293b'][index % 4],
+        initials: friend.firstName?.[0] || '?',
+        selected: true
+      }));
+      setFriends(formattedFriends);
+    } catch (error) {
+      console.error('Error loading friends:', error);
+    }
+  }, [currentUser]);
+
+  const handleBatPress = async () => {
     if (isShiny) {
-      // If the logo is already shiny, just toggle it back to normal
-      setIsShiny(false);
+      // If the logo is already shiny, turn off sig
+      // Single haptic feedback for turning off
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      try {
+        if (currentUser) {
+          await updateSigStatus(currentUser.uid, false);
+        }
+        setIsShiny(false);
+      } catch (error) {
+        console.error('Error updating sig status:', error);
+        Alert.alert('Error', 'Failed to update sig status');
+      }
     } else {
       // If the logo is normal, show the modal
       setShowModal(true);
@@ -48,10 +129,55 @@ const NotSharedScreen = ({ navigation }) => {
     setIsShiny(!isShiny);
   };
   
-  const handleSend = () => {
-    setShowModal(false);
-    toggleLogoType();
-    // Additional send functionality to be defined later
+  const handleSend = async () => {
+    try {
+      if (currentUser) {
+        await updateSigStatus(currentUser.uid, true);
+      }
+      setShowModal(false);
+      toggleLogoType();
+      
+      // EXTREMELY INTENSE haptic feedback celebration for turning on sig!
+      try {
+        // Intense burst of 10 HEAVY haptics for maximum impact
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 80);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 160);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 240);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 320);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 400);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 480);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 560);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 640);
+        setTimeout(async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        }, 720);
+        
+      } catch (error) {
+        console.log('Haptic feedback not available:', error);
+      }
+      
+      // Additional send functionality to be defined later
+    } catch (error) {
+      console.error('Error updating sig status:', error);
+      Alert.alert('Error', 'Failed to update sig status');
+    }
   };
   
   const toggleFriendSelection = (id) => {
@@ -70,10 +196,36 @@ const NotSharedScreen = ({ navigation }) => {
     }
   };
 
+  const handleNotificationsPress = () => {
+    navigation.navigate('FriendsScreen');
+  };
+
+  const handleSettingsPress = () => {
+    navigation.navigate('Settings');
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadPendingRequests();
+      loadFriends();
+    }, [loadPendingRequests, loadFriends])
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={handleSettingsPress} style={styles.headerButton}>
+          <Ionicons name="settings-outline" size={24} color="#111" />
+        </TouchableOpacity>
         <Text style={styles.headerText}>my sig</Text>
+        <TouchableOpacity onPress={handleNotificationsPress} style={styles.headerButton}>
+          <Ionicons name="people-outline" size={24} color="#111" />
+          {pendingRequestsCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{pendingRequestsCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
       
       <View style={styles.content}>
@@ -82,17 +234,26 @@ const NotSharedScreen = ({ navigation }) => {
           activeOpacity={0.8}
           style={styles.logoWrapper}
         >
-          <Image 
-            source={isShiny 
-              ? require('../assets/shiny-bat-logo.png')
-              : require('../assets/bat sig.png')} 
-            style={[
-              styles.batLogo,
-              isShiny && styles.shinyBatLogo
-            ]} 
-            resizeMode="contain"
-          />
+          <Animated.View style={{ transform: [{ scale: !isShiny ? pulseAnim : 1 }] }}>
+            <Image 
+              source={isShiny 
+                ? require('../assets/shiny-bat-logo.png')
+                : require('../assets/bat sig.png')} 
+              style={[
+                styles.batLogo,
+                isShiny && styles.shinyBatLogo
+              ]} 
+              resizeMode="contain"
+            />
+          </Animated.View>
         </TouchableOpacity>
+        {!isShiny && (
+          <Animated.Text 
+            style={[styles.hintText, { opacity: pulseAnim }]}
+          >
+            tap to turn on your sig
+          </Animated.Text>
+        )}
       </View>
       
       <View style={styles.bottomNavContainer}>
@@ -120,8 +281,16 @@ const NotSharedScreen = ({ navigation }) => {
         visible={showModal}
         onRequestClose={() => setShowModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowModal(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalContainer}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
             <Text style={styles.modalTitle}>send a sig to...</Text>
             
             <View style={styles.toggleContainer}>
@@ -163,8 +332,8 @@ const NotSharedScreen = ({ navigation }) => {
             >
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
       
       {/* Cave Alert Modal */}
@@ -198,7 +367,31 @@ const styles = StyleSheet.create({
   },
   header: {
     marginTop: height / 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  headerButton: {
+    padding: 8,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   headerText: {
     fontSize: 32,
@@ -214,19 +407,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoWrapper: {
-    width: 250,
-    height: 250,
+    width: 350,
+    height: 350,
     justifyContent: 'center',
     alignItems: 'center',
   },
   batLogo: {
-    width: 220,
-    height: 220,
+    width: 297,
+    height: 297,
     resizeMode: 'contain',
   },
   shinyBatLogo: {
-    width: 250,
-    height: 250,
+    width: 338,
+    height: 338,
   },
   bottomNavContainer: {
     position: 'absolute',
@@ -369,7 +562,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  }
+  },
+  hintText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 30,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
 });
 
 export default NotSharedScreen; 
