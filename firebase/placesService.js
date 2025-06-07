@@ -1,6 +1,18 @@
-import config from '../config/environment';
+// Environment configuration - inlined to avoid build issues
+const config = {
+  development: {
+    GOOGLE_PLACES_API_KEY: 'AIzaSyCjUsHNXnX34z7mVgFhT12d8lHmiLx4aZI',
+  },
+  production: {
+    // In production, load from process.env or secure storage
+    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyCjUsHNXnX34z7mVgFhT12d8lHmiLx4aZI',
+  }
+};
 
-const GOOGLE_PLACES_API_KEY = config.GOOGLE_PLACES_API_KEY;
+const environment = __DEV__ ? 'development' : 'production';
+const currentConfig = config[environment];
+
+const GOOGLE_PLACES_API_KEY = currentConfig.GOOGLE_PLACES_API_KEY;
 const PLACES_API_BASE_URL = 'https://maps.googleapis.com/maps/api/place';
 
 // Cache for location results to minimize API calls

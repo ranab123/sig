@@ -5,10 +5,13 @@ import * as Contacts from 'expo-contacts';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import Constants from 'expo-constants';
 import { LOCATION_TASK } from '../firebase/locationTasks';
 import { startForegroundLocationTracking } from '../firebase/locationServices';
+import { useAuth } from '../context/AuthContext';
 
 const PermissionsScreen = ({ navigation, route }) => {
+  const { currentUser, completeOnboarding } = useAuth();
   // Check if contacts were previously synced from the route params
   const contactsSynced = route.params?.contactsSynced || false;
   
@@ -142,55 +145,78 @@ const PermissionsScreen = ({ navigation, route }) => {
           return;
         }
         
-        // In Expo Go, we can't request background permissions, so we'll skip that part
-        // and just use foreground permissions
+        console.log('Foreground location permission granted');
         setLocation(true);
         
-        // Check if we're running in a development build or Expo Go
-        const isDevBuild = !__DEV__ || process.env.APP_VARIANT === 'development';
+        // Fix the dev build detection - only Expo Go is considered "dev"
+        const isExpoGo = __DEV__ && Constants.appOwnership === 'expo';
         
-        if (isDevBuild) {
+        if (!isExpoGo) {
+          // Production build (including TestFlight) - try background location first
           try {
-            // Only request background permissions in a development build
-            console.log('Requesting background location permission...');
+            console.log('Production build detected - requesting background location permission...');
             const backgroundPermission = await Location.requestBackgroundPermissionsAsync();
             
             if (backgroundPermission.status === 'granted') {
+              console.log('Background location permission granted');
+              
               // Check if the task is defined before starting it
               const isTaskDefined = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK);
+              console.log('Location task registered:', isTaskDefined);
+              
               if (isTaskDefined) {
-                // Start location updates
-                await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-                  accuracy: Location.Accuracy.Balanced,
-                  timeInterval: 15000, // 15 seconds
-                  distanceInterval: 100, // 100 meters
-                  foregroundService: {
-                    notificationTitle: 'Location is being tracked',
-                    notificationBody: 'sig is using your location to update your status',
-                  },
-                });
-                console.log('Background location updates started');
+                try {
+                  // Start background location updates
+                  await Location.startLocationUpdatesAsync(LOCATION_TASK, {
+                    accuracy: Location.Accuracy.Balanced,
+                    timeInterval: 30000, // Match foreground timing - 30 seconds
+                    distanceInterval: 50, // Match foreground distance - 50 meters
+                    foregroundService: {
+                      notificationTitle: 'Location Sharing Active',
+                      notificationBody: 'sig is sharing your location when your status is ON',
+                    },
+                  });
+                  console.log('Background location updates started successfully');
+                  return; // Success with background location
+                } catch (startError) {
+                  console.error('Failed to start background location updates:', startError);
+                }
               } else {
-                console.warn('Location task is not registered. Background updates not started.');
+                console.warn('Location task is not registered. Cannot start background updates.');
               }
             } else {
-              console.log('Background permission denied, but foreground is allowed');
+              console.log('Background permission denied or not available');
             }
           } catch (bgError) {
-            console.error('Error requesting background location:', bgError);
-            // Continue with just foreground permissions
+            console.error('Error with background location setup:', bgError);
           }
         } else {
-          console.log('Running in Expo Go - background location not available');
-          
-          // For Expo Go, use our custom foreground location service
+          console.log('Expo Go detected - skipping background location');
+        }
+        
+        // Fallback to foreground location tracking (works reliably in all builds)
+        console.log('Starting foreground location tracking as fallback/primary method');
+        try {
           const started = await startForegroundLocationTracking();
           if (started) {
             console.log('Foreground location tracking started successfully');
           } else {
             console.warn('Failed to start foreground location tracking');
+            Alert.alert(
+              'Location Setup Issue',
+              'Location tracking may not work properly. Please ensure your sig is turned ON to share location.',
+              [{ text: 'OK' }]
+            );
           }
+        } catch (foregroundError) {
+          console.error('Error starting foreground location tracking:', foregroundError);
+          Alert.alert(
+            'Location Error',
+            'Failed to start location tracking. Location sharing may not work properly.',
+            [{ text: 'OK' }]
+          );
         }
+        
       } else {
         // We can't revoke permissions programmatically, so just inform the user
         Alert.alert(
@@ -203,11 +229,28 @@ const PermissionsScreen = ({ navigation, route }) => {
       }
     } catch (error) {
       console.error('Error toggling location permission:', error);
+      Alert.alert(
+        'Error',
+        'An error occurred while setting up location permissions.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
-  const handleContinue = () => {
-    navigation && navigation.navigate('SendCaveLink');
+  const handleContinue = async () => {
+    try {
+      // Mark onboarding as completed for this user
+      if (currentUser) {
+        await completeOnboarding(currentUser.uid);
+        console.log('Onboarding completed for user:', currentUser.uid);
+      }
+      
+      navigation && navigation.navigate('SendCaveLink');
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      // Continue anyway - don't block the user
+      navigation && navigation.navigate('SendCaveLink');
+    }
   };
 
   // Disable switches while loading

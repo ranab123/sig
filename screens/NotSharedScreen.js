@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Modal, Switch, ScrollView, Alert, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { BatIconContext } from '../App';
+import { BatIconContext } from '../context/BatIconContext';
 import { useAuth } from '../context/AuthContext';
 import { updateSigStatus, getFriendRequestsReceived, getUserFriends } from '../firebase/services';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,7 +28,7 @@ const NotSharedScreen = ({ navigation }) => {
   
   const [showModal, setShowModal] = useState(false);
   const [showCaveAlert, setShowCaveAlert] = useState(false);
-  const [everyoneToggle, setEveryoneToggle] = useState(true);
+  const [everyoneToggle, setEveryoneToggle] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const { currentUser } = useAuth();
   
@@ -37,10 +37,10 @@ const NotSharedScreen = ({ navigation }) => {
   
   // Friends data with selected state
   const [friends, setFriends] = useState([
-    { id: '1', name: 'Brighton', time: 'been on sig for 3 weeks', color: '#7c3aed', initials: 'B', selected: true },
-    { id: '2', name: 'Easton', time: 'been on sig for 1 week', color: '#22c55e', initials: 'E', selected: true },
-    { id: '3', name: 'Lauren', time: 'been on sig for 3 months', color: '#000', initials: 'L', selected: true },
-    { id: '4', name: 'Sophie', time: 'been on sig for 2 weeks', color: '#1e293b', initials: 'S', selected: true },
+    { id: '1', name: 'Brighton', time: 'been on sig for 3 weeks', color: '#7c3aed', initials: 'B', selected: false },
+    { id: '2', name: 'Easton', time: 'been on sig for 1 week', color: '#22c55e', initials: 'E', selected: false },
+    { id: '3', name: 'Lauren', time: 'been on sig for 3 months', color: '#000', initials: 'L', selected: false },
+    { id: '4', name: 'Sophie', time: 'been on sig for 2 weeks', color: '#1e293b', initials: 'S', selected: false },
   ]);
 
   // Pulsing animation effect when sig is off
@@ -96,7 +96,7 @@ const NotSharedScreen = ({ navigation }) => {
         time: `been on sig for ${Math.floor(Math.random() * 12) + 1} weeks`, // Placeholder
         color: ['#7c3aed', '#22c55e', '#000', '#1e293b'][index % 4],
         initials: friend.firstName?.[0] || '?',
-        selected: true
+        selected: false
       }));
       setFriends(formattedFriends);
     } catch (error) {
@@ -106,19 +106,35 @@ const NotSharedScreen = ({ navigation }) => {
 
   const handleBatPress = async () => {
     if (isShiny) {
-      // If the logo is already shiny, turn off sig
-      // Single haptic feedback for turning off
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
-      try {
-        if (currentUser) {
-          await updateSigStatus(currentUser.uid, false);
-        }
-        setIsShiny(false);
-      } catch (error) {
-        console.error('Error updating sig status:', error);
-        Alert.alert('Error', 'Failed to update sig status');
-      }
+      // If the logo is already shiny, show confirmation before turning off sig
+      Alert.alert(
+        'Turn Off Sig?',
+        'Are you sure you want to turn off your sig? Your friends will no longer see that you\'re available to hang.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              // Single haptic feedback for turning off
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              
+              try {
+                if (currentUser) {
+                  await updateSigStatus(currentUser.uid, false);
+                }
+                setIsShiny(false);
+              } catch (error) {
+                console.error('Error updating sig status:', error);
+                Alert.alert('Error', 'Failed to update sig status');
+              }
+            },
+          },
+        ]
+      );
     } else {
       // If the logo is normal, show the modal
       setShowModal(true);
@@ -132,7 +148,26 @@ const NotSharedScreen = ({ navigation }) => {
   const handleSend = async () => {
     try {
       if (currentUser) {
-        await updateSigStatus(currentUser.uid, true);
+        // Determine which friends to notify
+        let selectedFriendIds = null;
+        
+        if (!everyoneToggle) {
+          // If everyone toggle is off, get selected friends
+          const selectedFriends = friends.filter(friend => friend.selected);
+          if (selectedFriends.length > 0) {
+            selectedFriendIds = selectedFriends.map(friend => friend.id);
+            console.log(`Everyone toggle is OFF. Selected ${selectedFriends.length} friends:`, selectedFriendIds);
+          } else {
+            // If no friends selected and everyone toggle is off, send to no one
+            selectedFriendIds = [];
+            console.log('Everyone toggle is OFF and no friends selected. Will send to no one.');
+          }
+        } else {
+          console.log('Everyone toggle is ON. Will send to all friends.');
+        }
+        // If everyoneToggle is true, selectedFriendIds stays null (send to all)
+        
+        await updateSigStatus(currentUser.uid, true, selectedFriendIds);
       }
       setShowModal(false);
       toggleLogoType();
@@ -181,9 +216,28 @@ const NotSharedScreen = ({ navigation }) => {
   };
   
   const toggleFriendSelection = (id) => {
-    setFriends(friends.map(friend => 
+    const updatedFriends = friends.map(friend => 
       friend.id === id ? {...friend, selected: !friend.selected} : friend
-    ));
+    );
+    setFriends(updatedFriends);
+    
+    // Check if all friends are still selected after this change
+    const allSelected = updatedFriends.every(friend => friend.selected);
+    
+    // If not all friends are selected, turn off everyone toggle
+    if (!allSelected) {
+      setEveryoneToggle(false);
+    } else {
+      // If all friends are now selected, turn on everyone toggle
+      setEveryoneToggle(true);
+    }
+  };
+
+  const handleEveryoneToggle = (value) => {
+    setEveryoneToggle(value);
+    // When everyone toggle is turned on, select all friends
+    // When turned off, deselect all friends
+    setFriends(friends.map(friend => ({...friend, selected: value})));
   };
 
   const handleCaveNavigation = () => {
@@ -259,7 +313,11 @@ const NotSharedScreen = ({ navigation }) => {
       <View style={styles.bottomNavContainer}>
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItemActive}>
-            <Ionicons name="person-outline" size={32} color="#7c3aed" />
+            <Image 
+              source={require('../assets/bat-logo.png')} 
+              style={styles.batSignalIcon}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.navItem}
@@ -297,34 +355,32 @@ const NotSharedScreen = ({ navigation }) => {
               <Text style={styles.toggleText}>Everyone</Text>
               <Switch
                 value={everyoneToggle}
-                onValueChange={setEveryoneToggle}
+                onValueChange={handleEveryoneToggle}
                 trackColor={{ false: '#ccc', true: '#111' }}
                 thumbColor={everyoneToggle ? '#fff' : '#fff'}
                 ios_backgroundColor="#ccc"
               />
             </View>
             
-            {!everyoneToggle && (
-              <ScrollView style={styles.friendsList}>
-                {friends.map((friend) => (
-                  <View key={friend.id} style={styles.friendItem}>
-                    <View style={styles.friendInfo}>
-                      <View style={[styles.friendAvatar, { backgroundColor: friend.color }]}>
-                        <Text style={styles.friendInitials}>{friend.initials}</Text>
-                      </View>
-                      <Text style={styles.friendName}>{friend.name}</Text>
+            <ScrollView style={styles.friendsList}>
+              {friends.map((friend) => (
+                <View key={friend.id} style={styles.friendItem}>
+                  <View style={styles.friendInfo}>
+                    <View style={[styles.friendAvatar, { backgroundColor: friend.color }]}>
+                      <Text style={styles.friendInitials}>{friend.initials}</Text>
                     </View>
-                    <Switch
-                      value={friend.selected}
-                      onValueChange={() => toggleFriendSelection(friend.id)}
-                      trackColor={{ false: '#ccc', true: '#111' }}
-                      thumbColor={friend.selected ? '#fff' : '#fff'}
-                      ios_backgroundColor="#ccc"
-                    />
+                    <Text style={styles.friendName}>{friend.name}</Text>
                   </View>
-                ))}
-              </ScrollView>
-            )}
+                  <Switch
+                    value={friend.selected}
+                    onValueChange={() => toggleFriendSelection(friend.id)}
+                    trackColor={{ false: '#ccc', true: '#111' }}
+                    thumbColor={friend.selected ? '#fff' : '#fff'}
+                    ios_backgroundColor="#ccc"
+                  />
+                </View>
+              ))}
+            </ScrollView>
             
             <TouchableOpacity 
               style={styles.sendButton}
@@ -434,22 +490,30 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     width: 250,
     height: 60,
+    borderWidth: 2,
+    borderColor: '#000',
   },
   navItem: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f2f2f2',
+    backgroundColor: '#fff',
   },
   navItemActive: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#111',
+    backgroundColor: '#000',
   },
   caveIcon: {
     width: 32,
     height: 32,
+    tintColor: '#000',
+  },
+  batSignalIcon: {
+    width: 32,
+    height: 32,
+    tintColor: '#fff',
   },
   modalOverlay: {
     flex: 1,

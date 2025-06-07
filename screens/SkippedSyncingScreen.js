@@ -6,12 +6,12 @@ const SkippedSyncingScreen = ({ navigation }) => {
     try {
       const result = await Share.share({
         message: 'Join my cave on sig!',
-        url: 'https://sig.app/invite', // Replace with your actual invite URL
+        url: 'https://testflight.apple.com/join/bNzXCpak',
       });
       
       if (result.action === Share.sharedAction) {
-        // User shared the content - navigate to NotShared (the screen with bat signal and "my sig")
-        navigation.navigate('NotShared');
+        // User shared the content - navigate to PermissionsScreen to continue onboarding
+        navigation.navigate('Permissions');
       }
     } catch (error) {
       console.error('Error sharing:', error);
@@ -27,7 +27,7 @@ const SkippedSyncingScreen = ({ navigation }) => {
           <Text style={styles.shareButtonText}>share</Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('NotShared')}>
+      <TouchableOpacity style={styles.skipButton} onPress={() => navigation.navigate('Permissions')}>
         <Text style={styles.skipText}>I do not want to share right now.</Text>
       </TouchableOpacity>
     </View>

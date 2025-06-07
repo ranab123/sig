@@ -33,8 +33,8 @@ const SendCaveLinkScreen = ({ navigation }) => {
   const positionY = useRef(new Animated.Value(screenHeight / 2 - logoHeight / 2)).current;
   
   // Velocity and direction
-  const velocityX = useRef(1);
-  const velocityY = useRef(1);
+  const velocityX = useRef(2.5);
+  const velocityY = useRef(2.5);
   
   // Function to handle the share action
   const handleImagePress = async () => {
@@ -45,7 +45,7 @@ const SendCaveLinkScreen = ({ navigation }) => {
     try {
       const result = await Share.share({
         message: 'Check out sig! Join my cave and let me know when you\'re free.',
-        url: 'https://example.com/sig', // Replace with your actual app URL
+        url: 'https://testflight.apple.com/join/bNzXCpak',
         title: 'Join my cave on sig!'
       });
     } catch (error) {
@@ -87,7 +87,7 @@ const SendCaveLinkScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.innerContainer}>
-        <Text style={styles.title}>catch the sig</Text>
+        <Text style={styles.title}>quick! catch the sig</Text>
       </View>
       
       <Animated.View style={[
@@ -107,7 +107,7 @@ const SendCaveLinkScreen = ({ navigation }) => {
       {imagePressed && (
         <TouchableOpacity 
           style={styles.fab} 
-          onPress={() => navigation.navigate('TheCave')}
+          onPress={() => navigation.navigate('NotShared')}
           activeOpacity={0.8}
         >
           <Ionicons name="arrow-forward" size={32} color="#fff" />

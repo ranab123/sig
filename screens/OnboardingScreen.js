@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Animated, Alert, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Animated, Alert, ActivityIndicator, FlatList, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createStackNavigator } from '@react-navigation/stack';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { sendVerificationCode, verifyCode, saveUserProfile, checkUserExistsByPhone } from '../firebase/services';
+import { sendVerificationCode, verifyCode, saveUserProfile, checkUserExistsByPhone, sendFriendRequest } from '../firebase/services';
 import { useAuth } from '../context/AuthContext';
 import { app, auth, db } from '../firebase/config';
 import { RecaptchaVerifier } from 'firebase/auth';
 import * as Contacts from 'expo-contacts';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import NotSharedScreen from './NotSharedScreen';
+import SendCaveLinkScreen from './SendCaveLinkScreen';
+import SkippedSyncingScreen from './SkippedSyncingScreen';
 
 const Stack = createStackNavigator();
 
@@ -118,12 +120,28 @@ const NumberScreen = ({ navigation, route }) => {
   };
 
   const handlePhoneChange = (text) => {
-    setPhoneNumber(formatPhoneNumber(text));
+    const formatted = formatPhoneNumber(text);
+    setPhoneNumber(formatted);
+    
+    // Auto-submit when 10 digits are entered - use the text parameter directly
+    const digits = text.replace(/\D/g, '');
+    if (digits.length === 10 && !loading) {
+      console.log('Auto-submitting phone number with 10 digits:', digits);
+      // Small delay to make it feel responsive
+      setTimeout(() => {
+        if (!loading) {
+          handleNext(digits); // Pass the digits directly to avoid state race condition
+        }
+      }, 100);
+    }
   };
 
-  const handleNext = async () => {
-    // Check if phone number is valid (10 digits)
-    const digits = phoneNumber.replace(/\D/g, '');
+  const handleNext = async (providedDigits = null) => {
+    // Use provided digits or extract from current phone number state
+    const digits = providedDigits || phoneNumber.replace(/\D/g, '');
+    
+    console.log('Phone number validation:', phoneNumber, 'Digits:', digits, 'Length:', digits.length);
+    
     if (digits.length !== 10) {
       Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number');
       return;
@@ -134,54 +152,26 @@ const NumberScreen = ({ navigation, route }) => {
       
       // Format for Firebase: +1xxxxxxxxxx (US format)
       const formattedNumber = `+1${digits}`;
-      console.log('Attempting to send verification to:', formattedNumber);
-      
-      // For sign-in, check if user exists
-      if (!isSignUp) {
-        try {
-          const userCheck = await checkUserExistsByPhone(formattedNumber);
-          if (!userCheck.exists) {
-            Alert.alert(
-              'Account Not Found', 
-              'No account found with this phone number. Please sign up first.',
-              [
-                { text: 'Sign Up', onPress: () => navigation.navigate('NameScreen') },
-                { text: 'Try Again', style: 'cancel' }
-              ]
-            );
-            setLoading(false);
-            return;
-          }
-        } catch (error) {
-          console.error('Error checking user existence:', error);
-          // Continue with verification in case of error
-        }
-      }
+      console.log('Sending verification to:', formattedNumber);
       
       // Send verification code
       const appVerifier = Platform.OS === 'web' ? webRecaptchaRef.current : recaptchaVerifier.current;
-      console.log('reCAPTCHA verifier initialized:', !!appVerifier);
       
-      try {
-        const confirmation = await sendVerificationCode(formattedNumber, appVerifier);
-        console.log('Verification sent successfully, confirmation result:', !!confirmation);
-        
-        // Store confirmation result in context
-        setConfirmationResult(confirmation);
-        
-        // Navigate to verification screen with user data and flow type
-        navigation.navigate('VerificationScreen', {
-          firstName,
-          lastName,
-          phoneNumber: formattedNumber,
-          isSignUp
-        });
-      } catch (verificationError) {
-        console.error('Detailed verification error:', JSON.stringify(verificationError));
-        throw verificationError;
-      }
+      const confirmation = await sendVerificationCode(formattedNumber, appVerifier);
+      console.log('Verification sent successfully');
+      
+      // Store confirmation result in context
+      setConfirmationResult(confirmation);
+      
+      // Navigate to verification screen
+      navigation.navigate('VerificationScreen', {
+        firstName,
+        lastName,
+        phoneNumber: formattedNumber,
+        isSignUp
+      });
     } catch (error) {
-      console.error('Error sending code:', error.message, error.code);
+      console.error('Error sending code:', error.code, error.message);
       Alert.alert('Error', `Could not send verification code: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -219,7 +209,7 @@ const NumberScreen = ({ navigation, route }) => {
         </View>
         <TouchableOpacity 
           style={[styles.fab, loading && styles.disabledButton]} 
-          onPress={handleNext} 
+          onPress={() => handleNext()} 
           activeOpacity={0.8}
           disabled={loading}
         >
@@ -236,41 +226,40 @@ const NumberScreen = ({ navigation, route }) => {
 
 const VerificationScreen = ({ navigation, route }) => {
   const { firstName, lastName, phoneNumber, isSignUp } = route.params;
-  const [code, setCode] = useState(['', '', '', '', '', '']);
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const inputs = useRef([]);
+  const inputRef = useRef(null);
   const { confirmationResult } = useAuth();
 
-  // Removed auto-fill for development - users should enter their actual verification code
-  // useEffect(() => {
-  //   // Auto-fill verification code in development for testing
-  //   if (isDev && DEV_TEST_VERIFICATION_CODE) {
-  //     const codeArray = DEV_TEST_VERIFICATION_CODE.split('');
-  //     setCode(codeArray);
-  //   }
-  // }, []);
+  // Focus the hidden input on mount
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
-  const handleChangeText = (text, index) => {
-    const newCode = [...code];
-    newCode[index] = text;
-    setCode(newCode);
-
-    // Move to next input if text is entered
-    if (text && index < 5) {
-      inputs.current[index + 1].focus();
+  const handleChangeText = (text) => {
+    // Only allow numeric input and limit to 6 characters
+    const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
+    setCode(numericText);
+    
+    // Auto-submit when all 6 digits are entered - use the text parameter directly
+    if (numericText.length === 6 && !loading) {
+      console.log('Auto-submitting verification code');
+      setTimeout(() => {
+        if (!loading) {
+          handleVerification(numericText); // Pass the complete code directly to avoid state race condition
+        }
+      }, 300);
     }
   };
 
-  const handleKeyPress = (e, index) => {
-    // Handle backspace
-    if (e.nativeEvent.key === 'Backspace' && !code[index] && index > 0) {
-      inputs.current[index - 1].focus();
-    }
-  };
-
-  const handleVerification = async () => {
-    const verificationCode = code.join('');
+  const handleVerification = async (providedCode = null) => {
+    // Use provided code or extract from current state
+    const verificationCode = providedCode || code;
+    
+    console.log('Verification code validation:', verificationCode, 'Length:', verificationCode.length);
     
     if (verificationCode.length !== 6) {
       setError('Please enter the 6-digit verification code');
@@ -283,58 +272,61 @@ const VerificationScreen = ({ navigation, route }) => {
       setError('');
       
       // Verify the code
-      let user;
-      try {
-        user = await verifyCode(confirmationResult, verificationCode);
-        console.log('Verification successful, user:', user?.uid);
-      } catch (verifyError) {
-        console.error('Verification error details:', verifyError.code, verifyError.message);
-        
-        // Show specific error for wrong verification code
-        if (verifyError.code === 'auth/invalid-verification-code' || 
-            verifyError.code === 'auth/invalid-verification-id' ||
-            verifyError.message?.includes('verification code')) {
-          setError('Verification failed. The code you entered is incorrect.');
-          Alert.alert('Verification Failed', 'The code you entered is incorrect. Please try again.');
-        } else {
-          setError(verifyError.message || 'Failed to verify code. Please try again.');
-          Alert.alert('Error', verifyError.message || 'Failed to verify code. Please try again.');
-        }
-        setLoading(false);
-        return; // Prevent navigation to the next screen
-      }
+      const userCredential = await verifyCode(confirmationResult, verificationCode, isSignUp);
+      console.log('Verification successful, user:', userCredential?.user?.uid);
       
       // Handle different flows based on isSignUp
       if (isSignUp) {
         // Sign-up flow: Save user data to Firestore
         try {
-          await saveUserProfile(user.uid, {
+          await saveUserProfile(userCredential.user.uid, {
             firstName,
             lastName,
             phoneNumber,
           });
         } catch (profileError) {
-          console.error('Profile save error:', profileError.code, profileError.message);
-          // Don't block the flow in development if saving profile fails
-          if (!isDev) {
+          console.error('Profile save error:', profileError);
+          // Don't block the flow in development
+          if (!__DEV__) {
             throw profileError;
           }
         }
         
-        // Navigate to the next screen in onboarding flow
+        // Navigate to onboarding flow
         navigation.navigate('IntroScreenOne', { firstName, lastName, phoneNumber });
       } else {
-        // Sign-in flow: Navigate directly to NotShared screen
+        // Sign-in flow: Navigate directly to main app
         navigation.navigate('NotShared');
       }
     } catch (error) {
-      console.error('Verification process error:', error);
-      setError(error.message || 'Failed to verify code. Please try again.');
-      Alert.alert('Error', error.message || 'Failed to verify code. Please try again.');
+      console.error('Verification error:', error);
+      
+      // Handle specific error for no account found during sign-in
+      if (!isSignUp && error.message?.includes('No account found')) {
+        setError('No account found with this phone number.');
+        Alert.alert(
+          'Account Not Found', 
+          'No account exists with this phone number. Please sign up first or check your number.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        setError(error.message || 'Failed to verify code. Please try again.');
+        Alert.alert('Error', error.message || 'Failed to verify code. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // Function to handle taps on the code container to focus the hidden input
+  const handleContainerPress = () => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  // Create array of 6 digits for display
+  const displayDigits = Array.from({ length: 6 }, (_, index) => code[index] || '');
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -346,24 +338,36 @@ const VerificationScreen = ({ navigation, route }) => {
           <View style={styles.innerContainer}>
             <Text style={styles.title}>verify your number.</Text>
             <Text style={styles.subtitle}>Enter the verification sent to {phoneNumber}.</Text>
-            <View style={styles.codeContainer}>
-              {code.map((digit, index) => (
-                <TextInput
+            
+            {/* Hidden TextInput for actual input */}
+            <TextInput
+              ref={inputRef}
+              style={styles.hiddenInput}
+              keyboardType="number-pad"
+              maxLength={6}
+              onChangeText={handleChangeText}
+              value={code}
+              autoFocus={true}
+            />
+            
+            {/* Visual display of code boxes */}
+            <TouchableOpacity style={styles.codeContainer} onPress={handleContainerPress} activeOpacity={1}>
+              {displayDigits.map((digit, index) => (
+                <View
                   key={index}
-                  ref={(ref) => (inputs.current[index] = ref)}
-                  style={styles.codeInput}
-                  keyboardType="number-pad"
-                  maxLength={1}
-                  onChangeText={(text) => handleChangeText(text, index)}
-                  onKeyPress={(e) => handleKeyPress(e, index)}
-                  value={digit}
-                />
+                  style={[
+                    styles.codeInput,
+                    index === code.length && styles.codeInputActive, // Highlight the current input box
+                  ]}
+                >
+                  <Text style={styles.codeText}>{digit}</Text>
+                </View>
               ))}
-            </View>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity 
             style={[styles.fab, loading && styles.disabledButton]} 
-            onPress={handleVerification} 
+            onPress={() => handleVerification()} 
             activeOpacity={0.8}
             disabled={loading}
           >
@@ -418,7 +422,7 @@ const IntroScreenTwo = ({ navigation, route }) => {
     }).start();
 
     const timer = setTimeout(() => {
-      navigation.navigate('SyncPermissionScreen', { firstName, lastName, phoneNumber });
+      navigation.navigate('IntroScreenThree', { firstName, lastName, phoneNumber });
     }, 3000); // Adjust time for reading
 
     return () => clearTimeout(timer);
@@ -429,6 +433,98 @@ const IntroScreenTwo = ({ navigation, route }) => {
       <Animated.View style={{ ...styles.innerContainer, opacity: fadeAnim }}>
         <Text style={styles.title}>...and to see when they are too.</Text>
       </Animated.View>
+    </SafeAreaView>
+  );
+};
+
+const IntroScreenThree = ({ navigation, route }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const step2FadeAnim = useRef(new Animated.Value(0)).current;
+  const [batTapped, setBatTapped] = useState(false);
+  const [showStep2, setShowStep2] = useState(false);
+  const { firstName, lastName, phoneNumber } = route.params || {};
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start();
+
+    // Show step 2 after 3 seconds with fade-in animation
+    const step2Timer = setTimeout(() => {
+      setShowStep2(true);
+      Animated.timing(step2FadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }).start();
+    }, 3000);
+
+    return () => clearTimeout(step2Timer);
+  }, [fadeAnim, step2FadeAnim]);
+
+  const handleBatTap = () => {
+    setBatTapped(true);
+  };
+
+  const handleNext = () => {
+    navigation.navigate('SyncPermissionScreen', { firstName, lastName, phoneNumber });
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Animated.View style={{ ...styles.tutorialScreenContainer, opacity: fadeAnim }}>
+        <Text style={styles.title}>here's how it works:</Text>
+        
+        <View style={styles.tutorialContainer}>
+          <View style={styles.tutorialStep}>
+            <View style={styles.stepNumber}>
+              <Text style={styles.stepNumberText}>1</Text>
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>tap the bat to turn on your sig</Text>
+              <View style={styles.batIconContainer}>
+                <TouchableOpacity onPress={handleBatTap} activeOpacity={0.8}>
+                  <Image 
+                    source={batTapped ? require('../assets/shiny-bat-logo.png') : require('../assets/bat sig.png')} 
+                    style={styles.tutorialBatIcon}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+                <Text style={styles.tapHint}>
+                  {batTapped ? 'nice! you just turned on your sig' : 'tap me!'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {showStep2 && (
+            <Animated.View style={[styles.tutorialStep, { opacity: step2FadeAnim }]}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>2</Text>
+              </View>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepTitle}>check the cave to see who's down</Text>
+                <View style={styles.caveIconContainer}>
+                  <TouchableOpacity style={styles.caveButton} activeOpacity={0.8}>
+                    <Image 
+                      source={require('../assets/caveVector.png')} 
+                      style={styles.tutorialCaveIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.caveHint}>your friends will appear here</Text>
+                </View>
+              </View>
+            </Animated.View>
+          )}
+        </View>
+      </Animated.View>
+      
+      <TouchableOpacity style={styles.fab} onPress={handleNext} activeOpacity={0.8}>
+        <Ionicons name="arrow-forward" size={32} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -509,7 +605,7 @@ const SyncPermissionScreen = ({ navigation, route }) => {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <Text style={styles.syncButtonText}>let's go</Text>
           ) : (
             <Text style={styles.syncButtonText}>let's go</Text>
           )}
@@ -525,100 +621,206 @@ const SyncPermissionScreen = ({ navigation, route }) => {
 const FriendsOnAppScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [friendsOnApp, setFriendsOnApp] = useState([]);
+  const [sendingRequests, setSendingRequests] = useState(new Set());
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const { contacts, firstName, lastName } = route.params;
+  const { currentUser } = useAuth();
 
   useEffect(() => {
     const findFriendsOnApp = async () => {
       try {
-        // Get all phone numbers from contacts
-        let phoneNumbers = [];
+        // Get and deduplicate phone numbers from contacts
+        const phoneNumberMap = new Map();
         
         contacts.forEach(contact => {
           if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
-            contact.phoneNumbers.forEach(phoneObj => {
-              if (phoneObj.number) {
-                // Normalize phone number - strip non-digits and ensure it has country code
-                let normalizedNumber = phoneObj.number.replace(/\D/g, '');
-                
-                // If it's a 10-digit US number without country code, add +1
-                if (normalizedNumber.length === 10) {
-                  normalizedNumber = `+1${normalizedNumber}`;
-                } else if (normalizedNumber.length > 10 && !normalizedNumber.startsWith('+')) {
-                  normalizedNumber = `+${normalizedNumber}`;
-                }
-                
-                phoneNumbers.push({
+            // Use the first phone number for each contact to avoid duplicates
+            const phoneObj = contact.phoneNumbers[0];
+            if (phoneObj.number) {
+              // Normalize phone number
+              let normalizedNumber = phoneObj.number.replace(/\D/g, '');
+              
+              if (normalizedNumber.length === 10) {
+                normalizedNumber = `+1${normalizedNumber}`;
+              } else if (normalizedNumber.length > 10 && !normalizedNumber.startsWith('+')) {
+                normalizedNumber = `+${normalizedNumber}`;
+              }
+              
+              // Only store if we haven't seen this number before
+              if (!phoneNumberMap.has(normalizedNumber)) {
+                phoneNumberMap.set(normalizedNumber, {
                   phoneNumber: normalizedNumber,
                   contactName: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
                   contactId: contact.id
                 });
               }
-            });
+            }
           }
         });
         
-        // Query Firestore for matching phone numbers
-        const usersRef = collection(db, 'users');
-        let friends = [];
+        const uniquePhoneNumbers = Array.from(phoneNumberMap.values());
+        console.log(`Processing ${uniquePhoneNumbers.length} unique phone numbers`);
         
-        // Process in batches to avoid large queries
-        const batchSize = 10;
-        for (let i = 0; i < phoneNumbers.length; i += batchSize) {
-          const batch = phoneNumbers.slice(i, i + batchSize);
-          const phoneNumbersToQuery = batch.map(p => p.phoneNumber);
-          
-          // We want to find any phone number in our batch that exists in the database
-          const q = query(usersRef, where('phoneNumber', 'in', phoneNumbersToQuery));
-          const querySnapshot = await getDocs(q);
-          
-          querySnapshot.forEach(doc => {
-            const userData = doc.data();
-            const matchingContact = batch.find(contact => 
-              contact.phoneNumber === userData.phoneNumber
-            );
-            
-            if (matchingContact) {
-              friends.push({
-                id: doc.id,
-                contactName: matchingContact.contactName,
-                firstName: userData.firstName || '',
-                lastName: userData.lastName || '',
-                phoneNumber: userData.phoneNumber
-              });
-            }
-          });
+        // Early exit if no phone numbers
+        if (uniquePhoneNumbers.length === 0) {
+          setFriendsOnApp([]);
+          setLoading(false);
+          return;
         }
         
-        setFriendsOnApp(friends);
+        // Set initial progress
+        setProgress({ current: 0, total: uniquePhoneNumbers.length });
+        
+        // Process in larger parallel batches
+        const usersRef = collection(db, 'users');
+        let allFriends = [];
+        const batchSize = 30; // Larger batch size for efficiency
+        const maxConcurrent = 3; // Limit concurrent requests to avoid overwhelming Firestore
+        
+        // Create batches
+        const batches = [];
+        for (let i = 0; i < uniquePhoneNumbers.length; i += batchSize) {
+          batches.push(uniquePhoneNumbers.slice(i, i + batchSize));
+        }
+        
+        console.log(`Created ${batches.length} batches for processing`);
+        
+        // Process batches with limited concurrency
+        for (let i = 0; i < batches.length; i += maxConcurrent) {
+          const currentBatches = batches.slice(i, i + maxConcurrent);
+          
+          // Process current set of batches in parallel
+          const batchPromises = currentBatches.map(async (batch) => {
+            try {
+              const phoneNumbersToQuery = batch.map(p => p.phoneNumber);
+              const q = query(usersRef, where('phoneNumber', 'in', phoneNumbersToQuery));
+              const querySnapshot = await getDocs(q);
+              
+              const batchFriends = [];
+              querySnapshot.forEach(doc => {
+                const userData = doc.data();
+                const matchingContact = batch.find(contact => 
+                  contact.phoneNumber === userData.phoneNumber
+                );
+                
+                if (matchingContact && doc.id !== currentUser?.uid) {
+                  batchFriends.push({
+                    id: doc.id,
+                    contactName: matchingContact.contactName,
+                    firstName: userData.firstName || '',
+                    lastName: userData.lastName || '',
+                    phoneNumber: userData.phoneNumber,
+                    requestSent: false
+                  });
+                }
+              });
+              
+              return batchFriends;
+            } catch (error) {
+              console.error('Error in batch query:', error);
+              return [];
+            }
+          });
+          
+          // Wait for current batch set to complete
+          const batchResults = await Promise.all(batchPromises);
+          
+          // Flatten and add to results
+          batchResults.forEach(batchFriends => {
+            allFriends.push(...batchFriends);
+          });
+          
+          // Update progress
+          const processedCount = Math.min((i + maxConcurrent) * batchSize, uniquePhoneNumbers.length);
+          setProgress({ current: processedCount, total: uniquePhoneNumbers.length });
+          
+          // Early termination if we found enough friends (optional)
+          if (allFriends.length >= 50) {
+            console.log('Found 50+ friends, stopping early for performance');
+            break;
+          }
+        }
+        
+        console.log(`Found ${allFriends.length} friends on app`);
+        setFriendsOnApp(allFriends);
       } catch (error) {
         console.error("Error finding friends on app:", error);
         // Continue with empty list in case of error
+        setFriendsOnApp([]);
       } finally {
         setLoading(false);
       }
     };
     
     findFriendsOnApp();
-  }, [contacts]);
+  }, [contacts, currentUser]);
 
-  const handleContinue = () => {
-    // Navigate directly to NotShared (the screen with bat signal and "my sig")
-    navigation.navigate('NotShared');
+  const handleSendFriendRequest = async (friendId) => {
+    if (!currentUser || sendingRequests.has(friendId)) return;
+    
+    try {
+      setSendingRequests(prev => new Set(prev).add(friendId));
+      
+      await sendFriendRequest(currentUser.uid, friendId);
+      
+      // Update the friend's requestSent status
+      setFriendsOnApp(prev => prev.map(friend => 
+        friend.id === friendId 
+          ? { ...friend, requestSent: true }
+          : friend
+      ));
+      
+      Alert.alert('Success', 'Friend request sent!');
+    } catch (error) {
+      console.error('Error sending friend request:', error);
+      Alert.alert('Error', 'Failed to send friend request');
+    } finally {
+      setSendingRequests(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(friendId);
+        return newSet;
+      });
+    }
   };
 
-  const renderFriendItem = ({ item }) => (
-    <View style={styles.friendItem}>
-      <View style={styles.friendAvatar}>
-        <Text style={styles.friendInitial}>{item.firstName[0] || item.contactName[0]}</Text>
+  const handleContinue = () => {
+    // Navigate to PermissionsScreen as part of the onboarding flow
+    navigation.navigate('Permissions');
+  };
+
+  const renderFriendItem = ({ item }) => {
+    const isSending = sendingRequests.has(item.id);
+    
+    return (
+      <View style={styles.friendItem}>
+        <View style={styles.friendAvatar}>
+          <Text style={styles.friendInitial}>{item.firstName[0] || item.contactName[0]}</Text>
+        </View>
+        <View style={styles.friendInfo}>
+          <Text style={styles.friendName}>
+            {item.firstName} {item.lastName}
+          </Text>
+          <Text style={styles.friendContact}>{item.contactName}</Text>
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.addFriendButton,
+            (item.requestSent || isSending) && styles.addFriendButtonDisabled
+          ]}
+          onPress={() => handleSendFriendRequest(item.id)}
+          disabled={item.requestSent || isSending}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.addFriendButtonText}>
+              {item.requestSent ? 'Sent' : 'Add'}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
-      <View style={styles.friendInfo}>
-        <Text style={styles.friendName}>
-          {item.firstName} {item.lastName}
-        </Text>
-        <Text style={styles.friendContact}>{item.contactName}</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const EmptyListComponent = () => (
     <View style={styles.emptyContainer}>
@@ -631,11 +833,17 @@ const FriendsOnAppScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.innerContainer}>
         <Text style={styles.title}>friends on sig</Text>
+        <Text style={styles.subtitle}>Add the friends you'd like to connect with</Text>
         
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#111" />
             <Text style={styles.loadingText}>Finding your friends...</Text>
+            {progress.total > 0 && (
+              <Text style={styles.progressText}>
+                Checked {progress.current} of {progress.total} contacts
+              </Text>
+            )}
           </View>
         ) : (
           <FlatList
@@ -698,8 +906,11 @@ const OnboardingNavigator = () => {
       <Stack.Screen name="VerificationScreen" component={VerificationScreen} />
       <Stack.Screen name="IntroScreenOne" component={IntroScreenOne} />
       <Stack.Screen name="IntroScreenTwo" component={IntroScreenTwo} />
+      <Stack.Screen name="IntroScreenThree" component={IntroScreenThree} />
       <Stack.Screen name="SyncPermissionScreen" component={SyncPermissionScreen} />
+      <Stack.Screen name="SkippedSyncing" component={SkippedSyncingScreen} />
       <Stack.Screen name="FriendsOnAppScreen" component={FriendsOnAppScreen} />
+      <Stack.Screen name="SendCaveLink" component={SendCaveLinkScreen} />
       <Stack.Screen name="NotShared" component={NotSharedScreen} />
     </Stack.Navigator>
   );
@@ -724,6 +935,97 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111',
     marginBottom: 40,
+  },
+  tutorialScreenContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 100,
+    paddingBottom: 140,
+  },
+  tutorialContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    maxWidth: '100%',
+  },
+  tutorialStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 80,
+    width: '100%',
+  },
+  stepNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#111',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 20,
+    marginTop: 8,
+    flexShrink: 0,
+  },
+  stepNumberText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  stepContent: {
+    flex: 1,
+    alignItems: 'center',
+    minHeight: 140,
+  },
+  stepTitle: {
+    fontSize: 18,
+    color: '#111',
+    fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center',
+    width: '100%',
+  },
+  batIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    marginLeft: -26, // Offset to center on screen (half of stepNumber width + marginRight: 32/2 + 20/2)
+  },
+  tutorialBatIcon: {
+    width: 70,
+    height: 70,
+    marginBottom: 12,
+  },
+  tapHint: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  caveIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    marginLeft: -26, // Offset to center on screen (half of stepNumber width + marginRight: 32/2 + 20/2)
+  },
+  caveButton: {
+    width: 80,
+    height: 50,
+    borderRadius: 10,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  tutorialCaveIcon: {
+    width: 28,
+    height: 28,
+    tintColor: '#fff',
+  },
+  caveHint: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
   input: {
     height: 48,
@@ -770,10 +1072,24 @@ const styles = StyleSheet.create({
     borderColor: '#D3D3D3',
     borderWidth: 1,
     borderRadius: 8,
-    textAlign: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  codeText: {
     fontSize: 18,
     color: '#111',
-    marginHorizontal: 2,
+    textAlign: 'center',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    opacity: 0,
+  },
+  codeInputActive: {
+    borderColor: '#111',
+    borderWidth: 2,
   },
   syncButton: {
     backgroundColor: '#111',
@@ -818,6 +1134,12 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
     color: '#666',
+  },
+  progressText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
   friendsList: {
     marginTop: 20,
@@ -884,6 +1206,23 @@ const styles = StyleSheet.create({
   signInText: {
     color: '#B0B0B0',
     fontSize: 14,
+  },
+  addFriendButton: {
+    backgroundColor: '#111',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginLeft: 10,
+    minWidth: 60,
+  },
+  addFriendButtonDisabled: {
+    backgroundColor: '#999',
+  },
+  addFriendButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 

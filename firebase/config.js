@@ -17,7 +17,10 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Auth without persistence - users sign in every time
 const auth = getAuth(app);
+
 const db = getFirestore(app);
 
 // Enable offline persistence

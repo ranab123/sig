@@ -6,8 +6,10 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 
 const SettingsScreen = ({ navigation }) => {
+  const { signOut, currentUser, userProfile } = useAuth();
   const [permissions, setPermissions] = useState({
     contacts: false,
     location: false,
@@ -183,6 +185,28 @@ const SettingsScreen = ({ navigation }) => {
     }
   };
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out? You\'ll need to verify your phone number again to sign back in.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Sign Out', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+              // Navigation will be handled automatically by the auth state change
+            } catch (error) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const PermissionItem = ({ icon, title, description, value, onToggle, iconColor = "#111" }) => (
     <View style={styles.permissionItem}>
       <View style={styles.permissionLeft}>
@@ -204,6 +228,21 @@ const SettingsScreen = ({ navigation }) => {
     </View>
   );
 
+  const ActionItem = ({ icon, title, description, onPress, iconColor = "#111", textColor = "#111" }) => (
+    <TouchableOpacity style={styles.actionItem} onPress={onPress}>
+      <View style={styles.permissionLeft}>
+        <View style={[styles.iconContainer, { backgroundColor: iconColor + '15' }]}>
+          <Ionicons name={icon} size={24} color={iconColor} />
+        </View>
+        <View style={styles.permissionText}>
+          <Text style={[styles.permissionTitle, { color: textColor }]}>{title}</Text>
+          <Text style={styles.permissionDescription}>{description}</Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color="#ccc" />
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -215,6 +254,19 @@ const SettingsScreen = ({ navigation }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Account Section */}
+        {userProfile && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Account</Text>
+            <View style={styles.accountInfo}>
+              <Text style={styles.accountName}>
+                {userProfile.firstName} {userProfile.lastName}
+              </Text>
+              <Text style={styles.accountPhone}>{userProfile.phoneNumber}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Permissions</Text>
           <Text style={styles.sectionDescription}>
@@ -248,6 +300,22 @@ const SettingsScreen = ({ navigation }) => {
             value={permissions.notifications}
             onToggle={handleNotificationsToggle}
             iconColor="#f59e0b"
+          />
+        </View>
+
+        {/* Account Actions Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+        </View>
+
+        <View style={styles.permissionsContainer}>
+          <ActionItem
+            icon="log-out-outline"
+            title="Sign Out"
+            description="Sign out of your account"
+            onPress={handleSignOut}
+            iconColor="#ef4444"
+            textColor="#ef4444"
           />
         </View>
 
@@ -362,6 +430,28 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginLeft: 12,
     flex: 1,
+  },
+  accountInfo: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  accountName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111',
+    marginBottom: 4,
+  },
+  accountPhone: {
+    fontSize: 16,
+    color: '#666',
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
 });
 
