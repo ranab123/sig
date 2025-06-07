@@ -739,15 +739,15 @@ const TheCaveScreen = ({ navigation }) => {
                 // show list view
                 return (
                   <View style={styles.listViewContainer}>
-                    <FlatList
-                      data={friends}
-                      renderItem={renderFriend}
-                      keyExtractor={item => item.id}
-                      ListEmptyComponent={EmptyComponent}
-                      showsVerticalScrollIndicator={false}
-                      style={styles.friendsList}
-                      contentContainerStyle={styles.friendsListContent}
-                    />
+          <FlatList
+            data={friends}
+            renderItem={renderFriend}
+            keyExtractor={item => item.id}
+            ListEmptyComponent={EmptyComponent}
+            showsVerticalScrollIndicator={false}
+            style={styles.friendsList}
+            contentContainerStyle={styles.friendsListContent}
+          />
                   </View>
                 );
               }

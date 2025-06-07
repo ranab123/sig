@@ -1,11 +1,11 @@
-// Environment configuration - inlined to avoid build issues
+// Environment configuration - using environment variables for security
 const config = {
   development: {
-    GOOGLE_PLACES_API_KEY: 'AIzaSyCjUsHNXnX34z7mVgFhT12d8lHmiLx4aZI',
+    GOOGLE_PLACES_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
   },
   production: {
     // In production, load from process.env or secure storage
-    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || 'AIzaSyCjUsHNXnX34z7mVgFhT12d8lHmiLx4aZI',
+    GOOGLE_PLACES_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
   }
 };
 

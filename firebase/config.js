@@ -5,15 +5,15 @@ import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-    apiKey: "AIzaSyAchfNHTsI_UJwDOQFQHtzApXtuTK3wE-k",
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
     authDomain: "siig-85a12.firebaseapp.com",
     databaseURL: "https://siig-85a12-default-rtdb.firebaseio.com",
     projectId: "siig-85a12",
     storageBucket: "siig-85a12.firebasestorage.app",
     messagingSenderId: "99388997225",
-    appId: "1:99388997225:web:c0febecadd7fdebbd2ecf8",
+    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
     measurementId: "G-X6WSH6PPYP"
-  };  
+};  
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
